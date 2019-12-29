@@ -49,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.skyscreamer.jsonassert.JSONAssert;
 import org.skyscreamer.jsonassert.JSONCompareMode;
+import org.skyscreamer.jsonassert.comparator.JSONComparator;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -119,6 +120,19 @@ public abstract class AbstractInitializrIntegrationTests {
 			JSONObject json = new JSONObject(response.getBody());
 			JSONObject expected = readMetadataJson(version);
 			JSONAssert.assertEquals(expected, json, compareMode);
+		}
+		catch (JSONException ex) {
+			throw new IllegalArgumentException("Invalid json", ex);
+		}
+	}
+
+	protected void validateMetadata(ResponseEntity<String> response, MediaType mediaType, String version,
+			JSONComparator comparator) {
+		try {
+			validateContentType(response, mediaType);
+			String json = new JSONObject(response.getBody()).toString(2);
+			String expected = readMetadataJson(version).toString(2);
+			JSONAssert.assertEquals(expected, json, comparator);
 		}
 		catch (JSONException ex) {
 			throw new IllegalArgumentException("Invalid json", ex);

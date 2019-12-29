@@ -16,12 +16,19 @@
 
 package io.spring.initializr.web.controller;
 
+import java.util.Map;
+
 import io.spring.initializr.web.AbstractInitializrControllerIntegrationTests;
 import io.spring.initializr.web.AbstractInitializrIntegrationTests;
 import io.spring.initializr.web.mapper.InitializrMetadataVersion;
-import org.junit.jupiter.api.Disabled;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.skyscreamer.jsonassert.JSONCompareMode;
+import org.skyscreamer.jsonassert.JSONCompareResult;
+import org.skyscreamer.jsonassert.comparator.DefaultComparator;
+import org.skyscreamer.jsonassert.comparator.JSONCompareUtil;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -47,11 +54,10 @@ public class ProjectMetadataControllerIntegrationTests extends AbstractInitializ
 	}
 
 	@Test
-	@Disabled("Need a comparator that does not care about the number of elements in an array")
 	void currentMetadataCompatibleWithV2() {
 		ResponseEntity<String> response = invokeHome(null, "*/*");
 		validateMetadata(response, AbstractInitializrIntegrationTests.CURRENT_METADATA_MEDIA_TYPE, "2.0.0",
-				JSONCompareMode.LENIENT);
+				new LenientArraySubsetComparator());
 	}
 
 	@Test
@@ -132,6 +138,56 @@ public class ProjectMetadataControllerIntegrationTests extends AbstractInitializ
 
 	private String getMetadataJson(String userAgentHeader, String... acceptHeaders) {
 		return invokeHome(userAgentHeader, acceptHeaders).getBody();
+	}
+
+	/**
+	 * Leniently performs {@code actual.contains(expected)}-style comparisons on any child
+	 * arrays.
+	 *
+	 * Adapted from {@link org.skyscreamer.jsonassert.comparator.ArraySizeComparator}
+	 */
+	private static class LenientArraySubsetComparator extends DefaultComparator {
+
+		LenientArraySubsetComparator() {
+			super(JSONCompareMode.LENIENT);
+		}
+
+		@Override
+		public void compareJSONArray(String prefix, JSONArray expected, JSONArray actual, JSONCompareResult result)
+				throws JSONException {
+			if (expected.length() > actual.length()) {
+				result.fail(prefix + "[]: Expected array containing " + expected.length()
+						+ " items to be a subset of array containing " + actual.length() + "items");
+				return;
+			}
+			if (expected.length() == 0) {
+				return; // Nothing to compare
+			}
+
+			String uniqueKey = JSONCompareUtil.findUniqueKey(actual);
+			Map<Object, JSONObject> expectedObjMap = JSONCompareUtil.arrayOfJsonObjectToMap(expected, uniqueKey);
+			Map<Object, JSONObject> actualObjMap = JSONCompareUtil.arrayOfJsonObjectToMap(actual, uniqueKey);
+
+			for (int i = 0; i < actual.length(); i++) {
+				Object objId = actual.getJSONObject(i).opt(uniqueKey);
+				if (!expectedObjMap.containsKey(objId)) {
+					actualObjMap.remove(objId);
+				}
+			}
+			JSONArray strippedActual = new JSONArray(actualObjMap.values());
+
+			if (JSONCompareUtil.allSimpleValues(expected)) {
+				compareJSONArrayOfSimpleValues(prefix, expected, strippedActual, result);
+			}
+			else if (JSONCompareUtil.allJSONObjects(expected)) {
+				compareJSONArrayOfJsonObjects(prefix, expected, strippedActual, result);
+			}
+			else {
+				// An expensive last resort
+				recursivelyCompareJSONArray(prefix, expected, strippedActual, result);
+			}
+		}
+
 	}
 
 }
